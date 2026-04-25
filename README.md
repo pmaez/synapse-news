@@ -1,6 +1,6 @@
 # Synapse News
 
-RSS news monitor and summarizer written in Python. It starts with a simple JSON state file, supports local LM Studio through an OpenAI-compatible API, and can also call OpenAI or Anthropic.
+RSS news monitor and summarizer. Polls feeds, fetches full article text, and generates LLM summaries. Supports LM Studio, OpenAI, Anthropic, or no LLM (extractive fallback). All state lives in a single JSON file.
 
 ## Quick Start
 
@@ -16,49 +16,92 @@ synapse-news config set-llm --provider lmstudio --base-url http://localhost:1234
 synapse-news run
 ```
 
-Use `--data path/to/file.json` with any command to choose a different JSON state file.
+Use `--data path/to/file.json` with any command to point at a different state file.
 
-## Commands
+---
+
+## Feed Management
 
 ```bash
+# Add or update a feed
+synapse-news feed add <url>
+synapse-news feed add <url> --title "My Feed"
+synapse-news feed add <url> --tags "tech,ai"
+synapse-news feed add <url> --disabled
+
+# Discover RSS/Atom feeds from a site URL
+synapse-news feed discover <url>
+
+# List all feeds (including disabled)
 synapse-news feed list
-synapse-news feed discover https://example.com/news
-synapse-news feed update-url <feed_id> https://example.com/rss.xml
+
+# Update a feed's URL while keeping its ID
+synapse-news feed update-url <feed_id> <new_url>
+synapse-news feed update-url <feed_id> <new_url> --title "New Title"
+
+# Remove a feed
 synapse-news feed remove <feed_id>
-synapse-news config show
-synapse-news config set-app --fetch-full-articles on --request-timeout-seconds 20
-synapse-news config set-app --retention-days 14
-synapse-news config set-app --max-article-age-days 3
-synapse-news summaries list --limit 10
-synapse-news summaries list --feed-id <feed_id> --json
-synapse-news summaries list --html data/summaries.html
-synapse-news reset --yes
-synapse-news run --limit-per-feed 5
-synapse-news run --max-article-age-days 3
-synapse-news run --html data/run.html
-synapse-news run --loop --interval-minutes 30
-synapse-news test-run
-synapse-news test-run --limit-per-feed 3
-synapse-news test-run --max-article-age-days 3
-synapse-news test-run --html data/test-run.html
-synapse-news test-run --all
-synapse-news test-run --feed-id <feed_id>
-synapse-news test-run --quiet-feeds
 ```
 
-After a run, view saved summaries:
+---
+
+## Running
 
 ```bash
+# Fetch new articles and summarize them
+synapse-news run
+
+# Limit articles fetched per feed
+synapse-news run --limit-per-feed 5
+
+# Only process articles newer than N days
+synapse-news run --max-article-age-days 3
+
+# Write this run's summaries to an HTML file
+synapse-news run --html data/run.html
+
+# Fetch without calling the LLM
+synapse-news run --dry-run
+
+# Run forever on an interval (default 60 minutes)
+synapse-news run --loop
+synapse-news run --loop --interval-minutes 30
+```
+
+### Test run (no side effects)
+
+Fetches and summarizes articles without updating seen history or saving summaries. Useful for checking feed quality and LLM output.
+
+```bash
+synapse-news test-run
+synapse-news test-run --limit-per-feed 3
+synapse-news test-run --all                         # all articles from each feed
+synapse-news test-run --feed-id <feed_id>          # one feed only
+synapse-news test-run --max-article-age-days 3
+synapse-news test-run --html data/test-run.html
+synapse-news test-run --dry-run                    # fetch only, skip LLM
+synapse-news test-run --save                       # persist results like a normal run
+synapse-news test-run --quiet-feeds                # hide per-feed diagnostics
+```
+
+---
+
+## Summaries
+
+```bash
+# List saved summaries (newest first, default 10)
 synapse-news summaries list
-synapse-news summaries list --limit 5
+synapse-news summaries list --limit 25
 synapse-news summaries list --feed-id <feed_id>
 synapse-news summaries list --json
 synapse-news summaries list --html data/summaries.html
 ```
 
+---
+
 ## Review TUI
 
-Launch an interactive terminal UI to read summaries and vote on articles:
+Browse summaries and vote on articles interactively. Votes are used as few-shot examples in future relevance scoring.
 
 ```bash
 synapse-news review
@@ -69,83 +112,83 @@ synapse-news review --limit 50
 |-----|--------|
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
-| `u` | Toggle upvote (↑) |
-| `d` | Toggle downvote (↓) |
+| `u` | Toggle upvote (↑) — marks article as positive example |
+| `d` | Toggle downvote (↓) — marks article as negative example |
 | `o` | Open article URL in browser |
 | `q` | Quit |
 
-Upvoted articles are stored as positive examples and injected into every future scoring prompt so the LLM learns what you like. Downvoted articles are stored as negative examples and injected similarly. Voting is mutually exclusive — upvoting clears a downvote and vice versa. No vote has no effect on scoring.
+Votes are mutually exclusive — upvoting clears a downvote and vice versa. No vote has no effect on scoring.
 
-To test summary quality without changing seen history or saved summaries:
-
-```bash
-synapse-news test-run
-synapse-news test-run --limit-per-feed 3
-synapse-news test-run --max-article-age-days 3
-synapse-news test-run --html data/test-run.html
-synapse-news test-run --all
-synapse-news test-run --feed-id <feed_id>
-```
-
-Use `--save` if you want the test run to behave like a normal run and persist results.
-
-If `test-run` shows a feed with zero entries, diagnose it:
+### Article voting via CLI
 
 ```bash
-synapse-news feed discover <site-or-feed-url>
-synapse-news feed update-url <feed_id> <discovered-feed-url>
+# Upvote (star) an article by ID prefix shown in `summaries list`
+synapse-news article star <id-prefix>
+synapse-news article unstar <id-prefix>
+synapse-news article list-starred
 ```
 
-To process existing feed items again from scratch while keeping your feeds and settings:
+---
+
+## Relevance Filtering
+
+When interests are set, each article is scored 1–10 by the LLM before summarization. Articles below the minimum score are dropped; survivors are sorted by score.
 
 ```bash
-synapse-news reset --yes
-synapse-news run
+# Set topics of interest (scoring only activates when this is non-empty)
+synapse-news config set-app --interests "Apple,AI,Python"
+
+# Clear interests (disables scoring entirely)
+synapse-news config set-app --interests ""
+
+# Set minimum score threshold (1–10, default 5)
+synapse-news config set-app --min-relevance 7
 ```
 
-Use `--keep-summaries` if you only want to clear seen history:
+Upvoted article titles are injected into the scoring prompt as positive examples; downvoted titles as negative examples. This improves scoring accuracy over time without changing interests or thresholds.
+
+---
+
+## Configuration
 
 ```bash
-synapse-news reset --yes --keep-summaries
+# Show current settings
+synapse-news config show
 ```
 
-## Retention
-
-By default, `run` purges seen article history and saved summaries older than 14 days. Change the retention window:
+### App settings
 
 ```bash
-synapse-news config set-app --retention-days 30
+synapse-news config set-app --fetch-full-articles on|off
+synapse-news config set-app --request-timeout-seconds 30
+synapse-news config set-app --retention-days 14       # 0 to disable purging
+synapse-news config set-app --max-article-age-days 3  # 0 for all articles
+synapse-news config set-app --user-agent "MyBot/1.0"
+synapse-news config set-app --interests "Apple,AI"
+synapse-news config set-app --min-relevance 7
 ```
 
-Disable automatic purging:
+### LLM settings
 
 ```bash
-synapse-news config set-app --retention-days 0
+synapse-news config set-llm --provider lmstudio|openai|openai-compatible|anthropic|none
+synapse-news config set-llm --model <model-id>
+synapse-news config set-llm --base-url <url>
+synapse-news config set-llm --api-key <key>
+synapse-news config set-llm --api-key-env <ENV_VAR>
+synapse-news config set-llm --temperature 0.3
+synapse-news config set-llm --max-tokens 800
+synapse-news config set-llm --thinking on|off
+synapse-news config set-llm --thinking-budget-tokens 2048
+synapse-news config set-llm --vision on|off
+synapse-news config set-llm --reasoning-effort low|medium|high
 ```
 
-By default, feed runs consider all feed entries, regardless of age. To only process recent feed entries:
-
-```bash
-synapse-news config set-app --max-article-age-days 3
-```
-
-You can also override article age for one command without changing saved config:
-
-```bash
-synapse-news run --max-article-age-days 3
-synapse-news test-run --max-article-age-days 3
-```
-
-Return to all articles:
-
-```bash
-synapse-news config set-app --max-article-age-days 0
-```
+---
 
 ## LLM Providers
 
-LM Studio:
-
+**LM Studio** (default):
 ```bash
 synapse-news config set-llm \
   --provider lmstudio \
@@ -153,61 +196,88 @@ synapse-news config set-llm \
   --model your-local-model
 ```
 
-OpenAI:
-
+**OpenAI**:
 ```bash
-export OPENAI_API_KEY=...
+export OPENAI_API_KEY=sk-...
 synapse-news config set-llm \
   --provider openai \
-  --base-url https://api.openai.com/v1 \
   --model gpt-4.1-mini \
-  --api-key-env OPENAI_API_KEY \
-  --reasoning-effort low
+  --api-key-env OPENAI_API_KEY
 ```
 
-Anthropic:
-
+**Anthropic**:
 ```bash
-export ANTHROPIC_API_KEY=...
+export ANTHROPIC_API_KEY=sk-ant-...
 synapse-news config set-llm \
   --provider anthropic \
   --model claude-3-5-sonnet-latest \
-  --api-key-env ANTHROPIC_API_KEY \
-  --thinking on \
-  --thinking-budget-tokens 1024
+  --api-key-env ANTHROPIC_API_KEY
 ```
 
-Disable LLM calls and use a basic extractive fallback:
-
+**No LLM** (extractive sentence fallback):
 ```bash
 synapse-news config set-llm --provider none
 ```
 
-The config includes switches for thinking and vision. Vision is stored now so the config shape is ready, but RSS article summarization currently uses text only.
+---
+
+## Retention
+
+By default `run` purges seen article history and summaries older than 14 days.
+
+```bash
+synapse-news config set-app --retention-days 30   # keep for 30 days
+synapse-news config set-app --retention-days 0    # disable purging
+
+# Only process feed entries newer than N days
+synapse-news config set-app --max-article-age-days 3
+
+# Override for a single run without changing saved config
+synapse-news run --max-article-age-days 3
+synapse-news config set-app --max-article-age-days 0   # back to all articles
+```
+
+---
+
+## Reset
+
+Clear seen article history so current feed items are processed again:
+
+```bash
+synapse-news reset --yes
+synapse-news reset --yes --keep-summaries   # clear seen history but keep old summaries
+```
+
+---
 
 ## Troubleshooting
 
-`[Errno 61] Connection refused` or `LLM check failed` means the configured LLM endpoint is not accepting connections. For LM Studio, start the local server and confirm the base URL:
+**`LLM check failed` / connection refused**
 
+The configured LLM endpoint isn't reachable. For LM Studio, start the local server:
 ```bash
-synapse-news config set-llm --provider lmstudio --base-url http://localhost:1234/v1 --model your-local-model
+synapse-news config set-llm --provider lmstudio --base-url http://localhost:1234/v1 --model your-model
 ```
 
-Inside Docker, use the host URL instead:
-
+Inside Docker, use the host bridge URL:
 ```bash
-synapse-news config set-llm --provider lmstudio --base-url http://host.docker.internal:1234/v1
+synapse-news config set-llm --base-url http://host.docker.internal:1234/v1
 ```
 
-To keep ingesting while LLM setup is offline:
-
+To keep running while LLM setup is offline:
 ```bash
 synapse-news config set-llm --provider none
 ```
 
-## Docker
+**Feed shows zero entries**
+```bash
+synapse-news feed discover <site-url>
+synapse-news feed update-url <feed_id> <discovered-feed-url>
+```
 
-Build and run once:
+---
+
+## Docker
 
 ```bash
 docker compose run --rm synapse-news init
@@ -216,19 +286,12 @@ docker compose run --rm synapse-news run
 ```
 
 Run on a schedule loop:
-
 ```bash
 docker compose up --build
 ```
 
-When LM Studio runs on the host, configure the base URL as:
-
-```bash
-synapse-news config set-llm --provider lmstudio --base-url http://host.docker.internal:1234/v1
-```
+---
 
 ## Storage Roadmap
 
-The app currently persists feeds, seen article IDs, summaries, and LLM settings in `data/synapse_news.json`. The Docker volume is already mounted at `/app/data`, which keeps the storage path stable for a later SQLite backend such as `data/synapse_news.sqlite`.
-
-The planned SQLite shape is captured in `docs/sqlite_schema.sql` so the JSON store can be migrated without changing the CLI surface.
+All state is stored in `data/synapse_news.json`. The Docker volume is mounted at `/app/data` to keep the path stable for a later SQLite migration. The planned schema is in `docs/sqlite_schema.sql`.
