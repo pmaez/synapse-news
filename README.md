@@ -184,6 +184,30 @@ synapse-news config set-llm --vision on|off
 synapse-news config set-llm --reasoning-effort low|medium|high
 ```
 
+### LLM profiles
+
+Named profiles let you save multiple LLM configurations and switch between them.
+
+```bash
+# Save a named profile (accepts all the same flags as set-llm)
+synapse-news config profile save haiku --provider anthropic --model claude-haiku-4-5-20251001 --api-key-env ANTHROPIC_API_KEY
+synapse-news config profile save local --provider lmstudio --model my-local-model
+synapse-news config profile save gpt --provider openai --model gpt-4.1-mini --api-key-env OPENAI_API_KEY
+
+# Set a profile as the active LLM config
+synapse-news config profile use haiku
+
+# Use a profile for a single run without changing the active config
+synapse-news run --profile haiku
+synapse-news test-run --profile haiku
+
+# List all saved profiles
+synapse-news config profile list
+
+# Delete a profile
+synapse-news config profile delete haiku
+```
+
 ---
 
 ## LLM Providers

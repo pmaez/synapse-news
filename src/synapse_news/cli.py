@@ -17,6 +17,20 @@ from .storage import JsonStore
 DEFAULT_DATA_PATH = Path("data/synapse_news.json")
 
 
+def _add_llm_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--provider", choices=["lmstudio", "openai", "openai-compatible", "anthropic", "none"])
+    parser.add_argument("--model")
+    parser.add_argument("--base-url")
+    parser.add_argument("--api-key")
+    parser.add_argument("--api-key-env")
+    parser.add_argument("--temperature", type=float)
+    parser.add_argument("--max-tokens", type=int)
+    parser.add_argument("--thinking", choices=["on", "off"])
+    parser.add_argument("--thinking-budget-tokens", type=int)
+    parser.add_argument("--vision", choices=["on", "off"])
+    parser.add_argument("--reasoning-effort")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RSS news monitor and summarizer.")
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH, help="Path to JSON state file.")
@@ -64,17 +78,17 @@ def build_parser() -> argparse.ArgumentParser:
     app_parser.add_argument("--interests", help="Comma-separated topics of interest used to filter articles (e.g. 'Apple,AI'). Pass empty string to disable filtering.")
     app_parser.add_argument("--min-relevance", type=int, help="Minimum relevance score (1-10) to include an article when interests are set. Default 5.")
     llm_parser = config_sub.add_parser("set-llm", help="Configure LLM provider settings.")
-    llm_parser.add_argument("--provider", choices=["lmstudio", "openai", "openai-compatible", "anthropic", "none"])
-    llm_parser.add_argument("--model")
-    llm_parser.add_argument("--base-url")
-    llm_parser.add_argument("--api-key")
-    llm_parser.add_argument("--api-key-env")
-    llm_parser.add_argument("--temperature", type=float)
-    llm_parser.add_argument("--max-tokens", type=int)
-    llm_parser.add_argument("--thinking", choices=["on", "off"])
-    llm_parser.add_argument("--thinking-budget-tokens", type=int)
-    llm_parser.add_argument("--vision", choices=["on", "off"])
-    llm_parser.add_argument("--reasoning-effort")
+    _add_llm_args(llm_parser)
+    profile_parser = config_sub.add_parser("profile", help="Manage named LLM profiles.")
+    profile_sub = profile_parser.add_subparsers(dest="profile_command", required=True)
+    profile_save = profile_sub.add_parser("save", help="Create or update a named LLM profile.")
+    profile_save.add_argument("name", help="Profile name.")
+    _add_llm_args(profile_save)
+    profile_use = profile_sub.add_parser("use", help="Set a profile as the active LLM config.")
+    profile_use.add_argument("name", help="Profile name.")
+    profile_sub.add_parser("list", help="List saved LLM profiles.")
+    profile_delete = profile_sub.add_parser("delete", help="Delete a named profile.")
+    profile_delete.add_argument("name", help="Profile name.")
 
     run_parser = subparsers.add_parser("run", help="Fetch, detect new articles, and summarize them.")
     run_parser.add_argument("--limit-per-feed", type=int)
@@ -83,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--loop", action="store_true", help="Run forever on an interval.")
     run_parser.add_argument("--interval-minutes", type=float, default=60.0)
+    run_parser.add_argument("--profile", help="Use a named LLM profile for this run without changing active config.")
 
     test_parser = subparsers.add_parser("test-run", help="Summarize sample articles without updating seen history.")
     test_parser.add_argument("--limit-per-feed", type=int, default=1, help="Articles to pull from each feed. Defaults to 1.")
@@ -93,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     test_parser.add_argument("--dry-run", action="store_true", help="Fetch articles but do not call the LLM.")
     test_parser.add_argument("--save", action="store_true", help="Save summaries and mark articles seen.")
     test_parser.add_argument("--quiet-feeds", action="store_true", help="Hide per-feed diagnostics.")
+    test_parser.add_argument("--profile", help="Use a named LLM profile for this run without changing active config.")
 
     article_parser = subparsers.add_parser("article", help="Manage article preferences (starring).")
     article_sub = article_parser.add_subparsers(dest="article_command", required=True)
@@ -213,33 +229,68 @@ def handle_config(args: argparse.Namespace, store: JsonStore) -> None:
         print("Updated app settings.")
         return
     if args.config_command == "set-llm":
-        llm = settings.llm
-        previous_provider = llm.provider
-        for attr, arg_name in [
-            ("provider", "provider"),
-            ("model", "model"),
-            ("base_url", "base_url"),
-            ("api_key", "api_key"),
-            ("api_key_env", "api_key_env"),
-            ("temperature", "temperature"),
-            ("max_tokens", "max_tokens"),
-            ("thinking_budget_tokens", "thinking_budget_tokens"),
-            ("reasoning_effort", "reasoning_effort"),
-        ]:
-            value = getattr(args, arg_name)
-            if value is not None:
-                setattr(llm, attr, value)
-        if args.provider and args.base_url is None and args.provider != previous_provider:
-            if args.provider == "openai":
-                llm.base_url = "https://api.openai.com/v1"
-            elif args.provider in {"lmstudio", "openai-compatible"}:
-                llm.base_url = "http://localhost:1234/v1"
-        if args.thinking is not None:
-            llm.thinking_enabled = args.thinking == "on"
-        if args.vision is not None:
-            llm.vision_enabled = args.vision == "on"
+        llm = _apply_llm_args(settings.llm, args)
         store.update_settings(AppSettings(llm=llm, fetch_full_articles=settings.fetch_full_articles, request_timeout_seconds=settings.request_timeout_seconds, user_agent=settings.user_agent))
         print("Updated LLM settings.")
+    if args.config_command == "profile":
+        handle_config_profile(args, store)
+
+
+def _apply_llm_args(llm: "LLMSettings", args: argparse.Namespace) -> "LLMSettings":
+    previous_provider = llm.provider
+    for attr, arg_name in [
+        ("provider", "provider"),
+        ("model", "model"),
+        ("base_url", "base_url"),
+        ("api_key", "api_key"),
+        ("api_key_env", "api_key_env"),
+        ("temperature", "temperature"),
+        ("max_tokens", "max_tokens"),
+        ("thinking_budget_tokens", "thinking_budget_tokens"),
+        ("reasoning_effort", "reasoning_effort"),
+    ]:
+        value = getattr(args, arg_name, None)
+        if value is not None:
+            setattr(llm, attr, value)
+    if getattr(args, "provider", None) and getattr(args, "base_url", None) is None and args.provider != previous_provider:
+        if args.provider == "openai":
+            llm.base_url = "https://api.openai.com/v1"
+        elif args.provider in {"lmstudio", "openai-compatible"}:
+            llm.base_url = "http://localhost:1234/v1"
+    if getattr(args, "thinking", None) is not None:
+        llm.thinking_enabled = args.thinking == "on"
+    if getattr(args, "vision", None) is not None:
+        llm.vision_enabled = args.vision == "on"
+    return llm
+
+
+def handle_config_profile(args: argparse.Namespace, store: JsonStore) -> None:
+    if args.profile_command == "save":
+        from .models import LLMSettings
+        llm = _apply_llm_args(LLMSettings(), args)
+        store.save_llm_profile(args.name, llm)
+        print(f"Saved profile '{args.name}'.")
+    elif args.profile_command == "use":
+        llm = store.get_llm_profile(args.name)
+        if llm is None:
+            print(f"No profile named '{args.name}'. Use 'config profile list' to see available profiles.")
+            return
+        settings = store.settings()
+        store.update_settings(AppSettings(llm=llm, fetch_full_articles=settings.fetch_full_articles, request_timeout_seconds=settings.request_timeout_seconds, user_agent=settings.user_agent))
+        print(f"Active LLM config set to profile '{args.name}'.")
+    elif args.profile_command == "list":
+        profiles = store.list_llm_profiles()
+        if not profiles:
+            print("No profiles saved.")
+            return
+        for name, cfg in profiles.items():
+            provider = cfg.get("provider", "?")
+            model = cfg.get("model", "?")
+            base_url = cfg.get("base_url", "")
+            print(f"{name}  {provider}  {model}  {base_url}")
+    elif args.profile_command == "delete":
+        removed = store.delete_llm_profile(args.name)
+        print(f"Deleted profile '{args.name}'." if removed else f"No profile named '{args.name}'.")
 
 
 def handle_reset(args: argparse.Namespace, store: JsonStore) -> None:
@@ -510,7 +561,7 @@ def summary_card_html(summary: dict, index: int | None = None, total: int | None
 def run_once(args: argparse.Namespace, store: JsonStore) -> None:
     data = store.load()
     settings = AppSettings.from_dict(data.get("settings"))
-    apply_run_overrides(settings, args)
+    apply_run_overrides(settings, args, store)
     purged_seen, purged_summaries = store.purge_older_than(settings.retention_days)
     if purged_seen or purged_summaries:
         print(f"Purged {purged_seen} seen article(s) and {purged_summaries} summary record(s) older than {settings.retention_days} day(s).")
@@ -526,7 +577,7 @@ def run_once(args: argparse.Namespace, store: JsonStore) -> None:
 
 def test_run(args: argparse.Namespace, store: JsonStore) -> None:
     settings = store.settings()
-    apply_run_overrides(settings, args)
+    apply_run_overrides(settings, args, store)
     feeds = select_feeds(store.feeds(), args.feed_id)
     if args.feed_id and not feeds:
         print(f"No enabled feed found for id {args.feed_id}.")
@@ -543,9 +594,16 @@ def test_run(args: argparse.Namespace, store: JsonStore) -> None:
     write_run_html_if_requested(args, processed)
 
 
-def apply_run_overrides(settings: AppSettings, args: argparse.Namespace) -> None:
+def apply_run_overrides(settings: AppSettings, args: argparse.Namespace, store: JsonStore) -> None:
     if getattr(args, "max_article_age_days", None) is not None:
         settings.max_article_age_days = parse_optional_positive_days(args.max_article_age_days)
+    profile_name = getattr(args, "profile", None)
+    if profile_name:
+        llm = store.get_llm_profile(profile_name)
+        if llm is None:
+            print(f"Warning: no profile named '{profile_name}', using active LLM config.")
+        else:
+            settings.llm = llm
 
 
 def select_feeds(feeds: list[Feed], feed_id: str | None) -> list[Feed]:
