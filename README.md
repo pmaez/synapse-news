@@ -5,6 +5,7 @@ RSS news monitor and summarizer. Polls feeds, fetches full article text, and gen
 ## Quick Start
 
 ```bash
+pyenv local 3.12.2
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
