@@ -572,20 +572,21 @@ def filter_and_rank_articles(articles: list[Article], settings: AppSettings, sto
     starred_titles = [v.get("title", "") for v in store.get_starred().values() if v.get("title")]
     downvoted_titles = [v.get("title", "") for v in store.get_downvoted().values() if v.get("title")]
     interests_str = ", ".join(settings.interests)
-    print(f"\nScoring {len(articles)} article(s) against interests: {interests_str}")
+    total = len(articles)
+    print(f"\nScoring {total} article(s) against interests: {interests_str}")
     scored: list[tuple[Article, int]] = []
-    for article in articles:
+    for i, article in enumerate(articles, start=1):
         try:
             sc, reason = score_article(article, settings.llm, settings.interests, starred_titles, downvoted_titles)
             article.relevance_score = sc
             article.relevance_reason = reason
             mark = "+" if sc >= settings.min_relevance_score else "-"
-            print(f"  [{mark}{sc:2}/10] {article.title[:65]}")
+            print(f"  [{i}/{total}] [{mark}{sc:2}/10] {article.title[:65]}")
         except Exception as exc:
             article.relevance_score = 5
             article.relevance_reason = ""
             sc = 5
-            print(f"  [? 5/10] {article.title[:65]} (scoring error: {exc})")
+            print(f"  [{i}/{total}] [? 5/10] {article.title[:65]} (scoring error: {exc})")
         scored.append((article, sc))
     passed = [(a, s) for a, s in scored if s >= settings.min_relevance_score]
     filtered_count = len(scored) - len(passed)
@@ -664,7 +665,8 @@ def process_articles(articles: list, settings: AppSettings, store: JsonStore, dr
     if not articles:
         print("No new articles.")
         return results
-    print(f"Found {len(articles)} new article(s).")
+    total = len(articles)
+    print(f"Found {total} new article(s).")
     if not dry_run:
         try:
             check_llm_available(settings.llm)
@@ -674,8 +676,8 @@ def process_articles(articles: list, settings: AppSettings, store: JsonStore, dr
             for article in articles:
                 results.append({"article": article, "status": f"LLM check failed: {exc}", "created_at": utc_now_iso(), "provider": settings.llm.provider, "model": settings.llm.model})
             return results
-    for article in articles:
-        print(f"\n{article.title}\n{article.url}")
+    for i, article in enumerate(articles, start=1):
+        print(f"\n[{i}/{total}] {article.title}\n{article.url}")
         summary_text = ""
         if dry_run:
             results.append({"article": article, "status": "Dry run: summary not requested.", "created_at": utc_now_iso(), "provider": settings.llm.provider, "model": settings.llm.model})
