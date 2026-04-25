@@ -5,7 +5,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Setup
 
 ```bash
-pyenv local 3.12.2
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
