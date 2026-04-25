@@ -1,0 +1,19 @@
+# Runtime data — may contain LLM API keys stored via `config set-llm --api-key`
+data/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment / secrets
+.env
+.env.*
+*.env
+
+# macOS
+.DS_Store

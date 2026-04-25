@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <title>Smoke Feed</title>
+    <link>https://example.com/</link>
+    <description>Local RSS fixture for CLI smoke tests.</description>
+    <item>
+      <title>Smoke Story One</title>
+      <link>https://example.com/smoke-story-one</link>
+      <pubDate>Sat, 25 Apr 2026 12:00:00 GMT</pubDate>
+      <description>This is a local smoke test article. It proves the CLI can parse a feed. It also proves summaries can be stored.</description>
+    </item>
+  </channel>
+</rss>

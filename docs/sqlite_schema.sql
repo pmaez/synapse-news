@@ -1,0 +1,39 @@
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS feeds (
+  id TEXT PRIMARY KEY,
+  url TEXT NOT NULL UNIQUE,
+  title TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  tags TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS seen_articles (
+  id TEXT PRIMARY KEY,
+  feed_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT,
+  published TEXT,
+  seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(feed_id) REFERENCES feeds(id)
+);
+
+CREATE TABLE IF NOT EXISTS summaries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id TEXT NOT NULL,
+  feed_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT,
+  published TEXT,
+  summary TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(article_id) REFERENCES seen_articles(id),
+  FOREIGN KEY(feed_id) REFERENCES feeds(id)
+);
