@@ -102,6 +102,9 @@ def build_parser() -> argparse.ArgumentParser:
     article_unstar.add_argument("article_id", help="Article id prefix.")
     article_sub.add_parser("list-starred", help="Show all starred articles.")
 
+    review_parser = subparsers.add_parser("review", help="Launch TUI to review and vote on articles.")
+    review_parser.add_argument("--limit", type=int, default=None, help="Max articles to load. Default: all.")
+
     return parser
 
 
@@ -125,6 +128,8 @@ def main(argv: list[str] | None = None) -> None:
         handle_summaries(args, store)
     elif args.command == "article":
         handle_article(args, store)
+    elif args.command == "review":
+        handle_review(args, store)
     elif args.command == "run":
         if args.loop:
             while True:
@@ -565,12 +570,13 @@ def print_feed_diagnostics(results: list[FeedFetchResult]) -> None:
 
 def filter_and_rank_articles(articles: list[Article], settings: AppSettings, store: JsonStore) -> list[Article]:
     starred_titles = [v.get("title", "") for v in store.get_starred().values() if v.get("title")]
+    downvoted_titles = [v.get("title", "") for v in store.get_downvoted().values() if v.get("title")]
     interests_str = ", ".join(settings.interests)
     print(f"\nScoring {len(articles)} article(s) against interests: {interests_str}")
     scored: list[tuple[Article, int]] = []
     for article in articles:
         try:
-            sc, reason = score_article(article, settings.llm, settings.interests, starred_titles)
+            sc, reason = score_article(article, settings.llm, settings.interests, starred_titles, downvoted_titles)
             article.relevance_score = sc
             article.relevance_reason = reason
             mark = "+" if sc >= settings.min_relevance_score else "-"
@@ -711,6 +717,15 @@ def process_articles(articles: list, settings: AppSettings, store: JsonStore, dr
                 },
             )
     return results
+
+
+def handle_review(args: argparse.Namespace, store: JsonStore) -> None:
+    try:
+        from .tui import ReviewApp
+    except ImportError:
+        print("The 'review' command requires textual. Install it with: pip install 'textual>=0.52.0'")
+        return
+    ReviewApp(store, limit=args.limit).run()
 
 
 if __name__ == "__main__":

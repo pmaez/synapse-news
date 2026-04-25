@@ -254,10 +254,16 @@ Comma-separated entities or topics.
 """
 
 
-def score_article(article: Article, settings: LLMSettings, interests: list[str], starred_titles: list[str]) -> tuple[int, str]:
+def score_article(
+    article: Article,
+    settings: LLMSettings,
+    interests: list[str],
+    starred_titles: list[str],
+    downvoted_titles: list[str] | None = None,
+) -> tuple[int, str]:
     if settings.provider == "none" or not interests:
         return 5, ""
-    prompt = _build_score_prompt(article, interests, starred_titles)
+    prompt = _build_score_prompt(article, interests, starred_titles, downvoted_titles or [])
     if settings.provider in {"lmstudio", "openai", "openai-compatible"}:
         raw = _score_openai_compatible(prompt, settings)
     elif settings.provider == "anthropic":
@@ -267,15 +273,24 @@ def score_article(article: Article, settings: LLMSettings, interests: list[str],
     return _parse_score_response(raw)
 
 
-def _build_score_prompt(article: Article, interests: list[str], starred_titles: list[str]) -> str:
+def _build_score_prompt(
+    article: Article,
+    interests: list[str],
+    starred_titles: list[str],
+    downvoted_titles: list[str] | None = None,
+) -> str:
     interests_str = ", ".join(interests)
-    starred_section = ""
+    liked_section = ""
     if starred_titles:
         examples = "\n".join(f"- {t}" for t in starred_titles[:8])
-        starred_section = f"\nThe reader has previously starred (liked) these articles:\n{examples}\n"
+        liked_section = f"\nThe reader has previously upvoted (liked) these articles:\n{examples}\n"
+    disliked_section = ""
+    if downvoted_titles:
+        examples = "\n".join(f"- {t}" for t in downvoted_titles[:8])
+        disliked_section = f"\nThe reader has previously downvoted (disliked) these articles:\n{examples}\n"
     return (
         f"Rate this article's relevance to the reader on a scale of 1-10.\n\n"
-        f"Reader interests: {interests_str}{starred_section}\n\n"
+        f"Reader interests: {interests_str}{liked_section}{disliked_section}\n\n"
         f"Article:\n"
         f"Title: {article.title}\n"
         f"Source: {article.feed_title}\n"

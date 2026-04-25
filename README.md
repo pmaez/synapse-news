@@ -56,6 +56,26 @@ synapse-news summaries list --json
 synapse-news summaries list --html data/summaries.html
 ```
 
+## Review TUI
+
+Launch an interactive terminal UI to read summaries and vote on articles:
+
+```bash
+synapse-news review
+synapse-news review --limit 50
+```
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `u` | Toggle upvote (↑) |
+| `d` | Toggle downvote (↓) |
+| `o` | Open article URL in browser |
+| `q` | Quit |
+
+Upvoted articles are stored as positive examples and injected into every future scoring prompt so the LLM learns what you like. Downvoted articles are stored as negative examples and injected similarly. Voting is mutually exclusive — upvoting clears a downvote and vice versa. No vote has no effect on scoring.
+
 To test summary quality without changing seen history or saved summaries:
 
 ```bash

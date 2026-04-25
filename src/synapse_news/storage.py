@@ -18,6 +18,7 @@ DEFAULT_STATE: dict[str, Any] = {
     "seen_articles": {},
     "summaries": [],
     "starred_articles": {},
+    "downvoted_articles": {},
 }
 
 
@@ -183,6 +184,21 @@ class JsonStore:
 
     def get_starred(self) -> dict[str, Any]:
         return self.load().get("starred_articles", {})
+
+    def downvote_article(self, article_id: str, metadata: dict[str, Any]) -> None:
+        with self.locked_data() as data:
+            data.setdefault("downvoted_articles", {})[article_id] = {"downvoted_at": utc_now_iso(), **metadata}
+
+    def remove_downvote(self, article_id: str) -> bool:
+        with self.locked_data() as data:
+            downvoted = data.setdefault("downvoted_articles", {})
+            if article_id not in downvoted:
+                return False
+            del downvoted[article_id]
+            return True
+
+    def get_downvoted(self) -> dict[str, Any]:
+        return self.load().get("downvoted_articles", {})
 
     def reset_articles(self, keep_summaries: bool = False) -> tuple[int, int]:
         with self.locked_data() as data:
