@@ -53,7 +53,7 @@ The app is a CLI tool (`synapse-news`) that polls RSS feeds, fetches article tex
 
 When `interests` is non-empty, a scoring pass runs before summarization:
 1. Each article is scored 1–10 by the LLM against `settings.interests` (e.g. `["Apple", "AI"]`).
-2. Articles below `min_relevance_score` (default 5) are dropped.
+2. Articles below `min_relevance_score` (default 8) are dropped.
 3. Near-duplicate titles are deduplicated via word-overlap (≥60%) — highest-scored article per cluster survives.
 4. Survivors are sorted descending by score before summarization.
 
@@ -62,7 +62,7 @@ Upvoted article titles are injected as positive few-shot examples and downvoted 
 ```bash
 # Set topics — scoring only activates when interests is non-empty
 synapse-news config set-app --interests "Apple,AI"
-synapse-news config set-app --min-relevance 7
+synapse-news config set-app --min-relevance 8
 
 # Star/unstar articles via CLI (short id shown in `summaries list`)
 synapse-news article star <id-prefix>
@@ -74,7 +74,7 @@ synapse-news review
 synapse-news review --limit 50
 ```
 
-Scoring uses `temperature=0.1` and `max_tokens=80` — a cheap, fast call relative to summarization. If interests is empty or `--provider none`, scoring is bypassed entirely.
+Scoring uses `temperature=0.1` and `max_scoring_tokens` (default 80) — a cheap, fast call relative to summarization. If interests is empty or `--provider none`, scoring is bypassed entirely.
 
 Votes are stored in the JSON state: upvotes in `starred_articles`, downvotes in `downvoted_articles`. Voting is mutually exclusive — setting one clears the other.
 

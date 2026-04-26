@@ -48,7 +48,8 @@ class LLMSettings:
     api_key: str | None = None
     api_key_env: str | None = None
     temperature: float = 0.2
-    max_tokens: int = 600
+    max_summary_tokens: int = 600
+    max_scoring_tokens: int = 80
     thinking_enabled: bool = False
     thinking_budget_tokens: int = 1024
     vision_enabled: bool = False
@@ -65,7 +66,8 @@ class LLMSettings:
             api_key=value.get("api_key"),
             api_key_env=value.get("api_key_env"),
             temperature=float(value.get("temperature", 0.2)),
-            max_tokens=int(value.get("max_tokens", 600)),
+            max_summary_tokens=int(value.get("max_summary_tokens", value.get("max_tokens", 600))),
+            max_scoring_tokens=int(value.get("max_scoring_tokens", 80)),
             thinking_enabled=bool(value.get("thinking_enabled", False)),
             thinking_budget_tokens=int(value.get("thinking_budget_tokens", 1024)),
             vision_enabled=bool(value.get("vision_enabled", False)),
@@ -80,7 +82,8 @@ class LLMSettings:
             "api_key": self.api_key,
             "api_key_env": self.api_key_env,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_summary_tokens": self.max_summary_tokens,
+            "max_scoring_tokens": self.max_scoring_tokens,
             "thinking_enabled": self.thinking_enabled,
             "thinking_budget_tokens": self.thinking_budget_tokens,
             "vision_enabled": self.vision_enabled,
@@ -93,11 +96,11 @@ class AppSettings:
     llm: LLMSettings = field(default_factory=LLMSettings)
     fetch_full_articles: bool = True
     request_timeout_seconds: float = 20.0
-    retention_days: int | None = 14
+    retention_days: int | None = 7
     max_article_age_days: int | None = None
     user_agent: str = "SynapseNews/0.1"
     interests: list[str] = field(default_factory=list)
-    min_relevance_score: int = 5
+    min_relevance_score: int = 8
 
     @classmethod
     def from_dict(cls, value: dict[str, Any] | None) -> "AppSettings":
@@ -107,11 +110,11 @@ class AppSettings:
             llm=LLMSettings.from_dict(value.get("llm")),
             fetch_full_articles=bool(value.get("fetch_full_articles", True)),
             request_timeout_seconds=float(value.get("request_timeout_seconds", 20.0)),
-            retention_days=parse_optional_positive_days(value.get("retention_days", 14)),
+            retention_days=parse_optional_positive_days(value.get("retention_days", 7)),
             max_article_age_days=parse_optional_positive_days(value.get("max_article_age_days")),
             user_agent=value.get("user_agent", "SynapseNews/0.1"),
             interests=list(value.get("interests", [])),
-            min_relevance_score=int(value.get("min_relevance_score", 5)),
+            min_relevance_score=int(value.get("min_relevance_score", 8)),
         )
 
     def to_dict(self) -> dict[str, Any]:

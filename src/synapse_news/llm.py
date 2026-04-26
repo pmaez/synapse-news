@@ -116,13 +116,13 @@ def summarize_openai_compatible(article: Article, settings: LLMSettings) -> str:
     key = api_key(settings)
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    payload = openai_compatible_payload(article, settings, SYSTEM_PROMPT, settings.max_tokens)
+    payload = openai_compatible_payload(article, settings, SYSTEM_PROMPT, settings.max_summary_tokens)
     data = post_openai_compatible(base_url, headers, payload, settings.provider)
     summary = extract_openai_compatible_text(data)
     if summary:
         return summary
 
-    retry_tokens = max(settings.max_tokens, 1200)
+    retry_tokens = max(settings.max_summary_tokens, 1200)
     retry_payload = openai_compatible_payload(article, settings, STRICT_SYSTEM_PROMPT, retry_tokens)
     retry_data = post_openai_compatible(base_url, headers, retry_payload, settings.provider)
     retry_summary = extract_openai_compatible_text(retry_data)
@@ -215,7 +215,7 @@ def summarize_anthropic(article: Article, settings: LLMSettings) -> str:
     }
     payload: dict[str, Any] = {
         "model": settings.model,
-        "max_tokens": settings.max_tokens,
+        "max_tokens": settings.max_summary_tokens,
         "temperature": settings.temperature,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt_for(article)}],
@@ -311,7 +311,7 @@ def _score_openai_compatible(prompt: str, settings: LLMSettings) -> str:
     payload: dict[str, Any] = {
         "model": settings.model,
         "temperature": 0.1,
-        "max_tokens": 1024,
+        "max_tokens": settings.max_scoring_tokens,
         "messages": [
             {"role": "system", "content": SCORE_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
@@ -342,7 +342,7 @@ def _score_anthropic(prompt: str, settings: LLMSettings) -> str:
     }
     payload: dict[str, Any] = {
         "model": settings.model,
-        "max_tokens": 80,
+        "max_tokens": settings.max_scoring_tokens,
         "temperature": 0.1,
         "system": SCORE_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],

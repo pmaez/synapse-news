@@ -141,8 +141,8 @@ synapse-news config set-app --interests "Apple,AI,Python"
 # Clear interests (disables scoring entirely)
 synapse-news config set-app --interests ""
 
-# Set minimum score threshold (1–10, default 5)
-synapse-news config set-app --min-relevance 7
+# Set minimum score threshold (1–10, default 8)
+synapse-news config set-app --min-relevance 8
 ```
 
 Upvoted article titles are injected into the scoring prompt as positive examples; downvoted titles as negative examples. This improves scoring accuracy over time without changing interests or thresholds.
@@ -161,11 +161,11 @@ synapse-news config show
 ```bash
 synapse-news config set-app --fetch-full-articles on|off
 synapse-news config set-app --request-timeout-seconds 30
-synapse-news config set-app --retention-days 14       # 0 to disable purging
+synapse-news config set-app --retention-days 7        # 0 to disable purging
 synapse-news config set-app --max-article-age-days 3  # 0 for all articles
 synapse-news config set-app --user-agent "MyBot/1.0"
 synapse-news config set-app --interests "Apple,AI"
-synapse-news config set-app --min-relevance 7
+synapse-news config set-app --min-relevance 8
 ```
 
 ### LLM settings
@@ -177,7 +177,8 @@ synapse-news config set-llm --base-url <url>
 synapse-news config set-llm --api-key <key>
 synapse-news config set-llm --api-key-env <ENV_VAR>
 synapse-news config set-llm --temperature 0.3
-synapse-news config set-llm --max-tokens 800
+synapse-news config set-llm --max-summary-tokens 800
+synapse-news config set-llm --max-scoring-tokens 120
 synapse-news config set-llm --thinking on|off
 synapse-news config set-llm --thinking-budget-tokens 2048
 synapse-news config set-llm --vision on|off
@@ -247,7 +248,7 @@ synapse-news config set-llm --provider none
 
 ## Retention
 
-By default `run` purges seen article history and summaries older than 14 days.
+By default `run` purges seen article history and summaries older than 7 days.
 
 ```bash
 synapse-news config set-app --retention-days 30   # keep for 30 days

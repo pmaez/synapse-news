@@ -24,7 +24,8 @@ def _add_llm_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--api-key")
     parser.add_argument("--api-key-env")
     parser.add_argument("--temperature", type=float)
-    parser.add_argument("--max-tokens", type=int)
+    parser.add_argument("--max-summary-tokens", type=int)
+    parser.add_argument("--max-scoring-tokens", type=int)
     parser.add_argument("--thinking", choices=["on", "off"])
     parser.add_argument("--thinking-budget-tokens", type=int)
     parser.add_argument("--vision", choices=["on", "off"])
@@ -245,7 +246,8 @@ def _apply_llm_args(llm: "LLMSettings", args: argparse.Namespace) -> "LLMSetting
         ("api_key", "api_key"),
         ("api_key_env", "api_key_env"),
         ("temperature", "temperature"),
-        ("max_tokens", "max_tokens"),
+        ("max_summary_tokens", "max_summary_tokens"),
+        ("max_scoring_tokens", "max_scoring_tokens"),
         ("thinking_budget_tokens", "thinking_budget_tokens"),
         ("reasoning_effort", "reasoning_effort"),
     ]:

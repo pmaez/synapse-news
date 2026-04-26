@@ -90,7 +90,7 @@ class JsonStoreTest(unittest.TestCase):
             self.assertEqual(store.load()["summaries"][0]["article_id"], "recent")
 
     def test_settings_retention_days(self):
-        self.assertEqual(AppSettings.from_dict({}).retention_days, 14)
+        self.assertEqual(AppSettings.from_dict({}).retention_days, 7)
         self.assertIsNone(AppSettings.from_dict({"retention_days": 0}).retention_days)
         self.assertEqual(AppSettings.from_dict({"retention_days": 30}).retention_days, 30)
         self.assertIsNone(AppSettings.from_dict({}).max_article_age_days)
