@@ -120,10 +120,11 @@ def summarize_openai_compatible(article: Article, settings: LLMSettings) -> str:
     payload = openai_compatible_payload(article, settings, SYSTEM_PROMPT, settings.max_summary_tokens)
     data = post_openai_compatible(base_url, headers, payload, settings.provider)
     summary = extract_openai_compatible_text(data)
-    if summary:
+    finish_reason = ((data.get("choices") or [{}])[0]).get("finish_reason")
+    if summary and finish_reason != "length":
         return summary
 
-    retry_tokens = max(settings.max_summary_tokens, 1200)
+    retry_tokens = max(settings.max_summary_tokens * 2, 1200)
     retry_payload = openai_compatible_payload(article, settings, STRICT_SYSTEM_PROMPT, retry_tokens)
     retry_data = post_openai_compatible(base_url, headers, retry_payload, settings.provider)
     retry_summary = extract_openai_compatible_text(retry_data)
