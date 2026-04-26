@@ -49,7 +49,7 @@ class LLMSettings:
     api_key_env: str | None = None
     temperature: float = 0.2
     max_summary_tokens: int = 600
-    max_scoring_tokens: int = 150
+    max_scoring_tokens: int = 1024
     thinking_enabled: bool = False
     thinking_budget_tokens: int = 1024
     vision_enabled: bool = False
@@ -67,7 +67,7 @@ class LLMSettings:
             api_key_env=value.get("api_key_env"),
             temperature=float(value.get("temperature", 0.2)),
             max_summary_tokens=int(value.get("max_summary_tokens", value.get("max_tokens", 600))),
-            max_scoring_tokens=int(value.get("max_scoring_tokens", 150)),
+            max_scoring_tokens=int(value.get("max_scoring_tokens", 1024)),
             thinking_enabled=bool(value.get("thinking_enabled", False)),
             thinking_budget_tokens=int(value.get("thinking_budget_tokens", 1024)),
             vision_enabled=bool(value.get("vision_enabled", False)),
