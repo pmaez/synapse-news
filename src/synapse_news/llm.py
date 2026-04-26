@@ -324,6 +324,8 @@ def _score_openai_compatible(prompt: str, settings: LLMSettings) -> str:
         return ""
     message = choices[0].get("message") or {}
     content = message.get("content")
+    if os.environ.get("SYNAPSE_DEBUG"):
+        print(f"[debug score raw] finish_reason={choices[0].get('finish_reason')!r} content={content!r}")
     if isinstance(content, str) and content.strip():
         cleaned = _strip_thinking_tags(content)
         if cleaned:
@@ -358,7 +360,11 @@ def _score_anthropic(prompt: str, settings: LLMSettings) -> str:
 
 
 def _strip_thinking_tags(text: str) -> str:
-    return re.sub(r'<think(?:ing)?>\s*.*?\s*</think(?:ing)?>', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+    # Strip complete blocks first
+    text = re.sub(r'<think(?:ing)?>\s*.*?\s*</think(?:ing)?>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Strip unclosed blocks (thinking truncated by token limit — no closing tag)
+    text = re.sub(r'<think(?:ing)?>.*', '', text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
 
 
 def _parse_score_response(text: str) -> tuple[int, str]:
