@@ -49,6 +49,7 @@ The app is a CLI tool (`synapse-news`) that polls RSS feeds, fetches article tex
 - If the LLM check fails before a run, no articles are marked seen so they will be retried on the next run.
 - `summaries list` returns newest-first (reversed on read); the JSON file stores them append-order.
 - If `max_article_age_days` is not set but `retention_days` is, `max_article_age_days` defaults to `retention_days` at run time (applied in `apply_run_overrides`).
+- When `fetch_full_articles` is enabled, the fetched text is only used if it is longer than the RSS excerpt. If the fetch returns a bot-protection page (e.g. Cloudflare JS challenge) or otherwise less content than the excerpt, the excerpt is used instead.
 
 ### Relevance filtering and ranking
 
