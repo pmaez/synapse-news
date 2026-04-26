@@ -75,7 +75,7 @@ synapse-news review
 synapse-news review --limit 50
 ```
 
-Scoring uses `temperature=0.1` and `max_scoring_tokens` (default 80) — a cheap, fast call relative to summarization. If interests is empty or `--provider none`, scoring is bypassed entirely.
+Scoring uses `temperature=0.1` and `max_scoring_tokens` (default 1024). The high default is required for reasoning models (DeepSeek-R1 etc.) that spend tokens on internal thinking before emitting the answer — too low a value leaves `content` empty and scores fall back to 1. `<think>`/`<thinking>` blocks are stripped from responses before parsing. Set `SYNAPSE_DEBUG=1` to print raw score responses for diagnosis. If interests is empty or `--provider none`, scoring is bypassed entirely.
 
 Votes are stored in the JSON state: upvotes in `starred_articles`, downvotes in `downvoted_articles`. Voting is mutually exclusive — setting one clears the other.
 
