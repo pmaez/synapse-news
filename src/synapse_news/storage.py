@@ -201,18 +201,22 @@ class JsonStore:
     def get_downvoted(self) -> dict[str, Any]:
         return self.load().get("downvoted_articles", {})
 
-    def save_llm_profile(self, name: str, llm: "LLMSettings") -> None:
+    def save_profile(self, name: str, settings: "AppSettings") -> None:
         with self.locked_data() as data:
-            data.setdefault("llm_profiles", {})[name] = llm.to_dict()
+            data.setdefault("llm_profiles", {})[name] = settings.to_dict()
 
-    def get_llm_profile(self, name: str) -> "LLMSettings | None":
-        from .models import LLMSettings
+    def get_profile(self, name: str) -> "AppSettings | None":
+        from .models import AppSettings, LLMSettings
         profiles = self.load().get("llm_profiles", {})
         if name not in profiles:
             return None
-        return LLMSettings.from_dict(profiles[name])
+        stored = profiles[name]
+        # Migrate old LLMSettings-only format (has "provider" but no "llm" key)
+        if "provider" in stored and "llm" not in stored:
+            return AppSettings(llm=LLMSettings.from_dict(stored))
+        return AppSettings.from_dict(stored)
 
-    def delete_llm_profile(self, name: str) -> bool:
+    def delete_profile(self, name: str) -> bool:
         with self.locked_data() as data:
             profiles = data.setdefault("llm_profiles", {})
             if name not in profiles:
@@ -220,7 +224,7 @@ class JsonStore:
             del profiles[name]
             return True
 
-    def list_llm_profiles(self) -> dict[str, Any]:
+    def list_profiles(self) -> dict[str, Any]:
         return self.load().get("llm_profiles", {})
 
     def reset_articles(self, keep_summaries: bool = False) -> tuple[int, int]:

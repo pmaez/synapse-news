@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 from html import escape
 import json
 import time
@@ -15,6 +16,34 @@ from .storage import JsonStore
 
 
 DEFAULT_DATA_PATH = Path("data/synapse_news.json")
+
+
+def _add_app_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--fetch-full-articles", choices=["on", "off"])
+    parser.add_argument("--request-timeout-seconds", type=float)
+    parser.add_argument("--retention-days", type=int)
+    parser.add_argument("--max-article-age-days", type=int)
+    parser.add_argument("--user-agent")
+    parser.add_argument("--interests")
+    parser.add_argument("--min-relevance", type=int)
+
+
+def _apply_app_args(settings: "AppSettings", args: argparse.Namespace) -> "AppSettings":
+    if getattr(args, "fetch_full_articles", None) is not None:
+        settings.fetch_full_articles = args.fetch_full_articles == "on"
+    if getattr(args, "request_timeout_seconds", None) is not None:
+        settings.request_timeout_seconds = args.request_timeout_seconds
+    if getattr(args, "retention_days", None) is not None:
+        settings.retention_days = args.retention_days if args.retention_days > 0 else None
+    if getattr(args, "max_article_age_days", None) is not None:
+        settings.max_article_age_days = args.max_article_age_days if args.max_article_age_days > 0 else None
+    if getattr(args, "user_agent", None) is not None:
+        settings.user_agent = args.user_agent
+    if getattr(args, "interests", None) is not None:
+        settings.interests = parse_tags(args.interests)
+    if getattr(args, "min_relevance", None) is not None:
+        settings.min_relevance_score = max(1, min(10, args.min_relevance))
+    return settings
 
 
 def _add_llm_args(parser: argparse.ArgumentParser) -> None:
@@ -82,12 +111,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_llm_args(llm_parser)
     profile_parser = config_sub.add_parser("profile", help="Manage named LLM profiles.")
     profile_sub = profile_parser.add_subparsers(dest="profile_command", required=True)
-    profile_save = profile_sub.add_parser("save", help="Create or update a named LLM profile.")
+    profile_save = profile_sub.add_parser("save", help="Create or update a named profile.")
     profile_save.add_argument("name", help="Profile name.")
     _add_llm_args(profile_save)
-    profile_use = profile_sub.add_parser("use", help="Set a profile as the active LLM config.")
+    _add_app_args(profile_save)
+    profile_use = profile_sub.add_parser("use", help="Set a profile as the active config.")
     profile_use.add_argument("name", help="Profile name.")
-    profile_sub.add_parser("list", help="List saved LLM profiles.")
+    profile_sub.add_parser("list", help="List saved profiles.")
     profile_delete = profile_sub.add_parser("delete", help="Delete a named profile.")
     profile_delete.add_argument("name", help="Profile name.")
 
@@ -212,26 +242,14 @@ def handle_config(args: argparse.Namespace, store: JsonStore) -> None:
         print(json.dumps(settings.to_dict(), indent=2, sort_keys=True))
         return
     if args.config_command == "set-app":
-        if args.fetch_full_articles is not None:
-            settings.fetch_full_articles = args.fetch_full_articles == "on"
-        if args.request_timeout_seconds is not None:
-            settings.request_timeout_seconds = args.request_timeout_seconds
-        if args.retention_days is not None:
-            settings.retention_days = args.retention_days if args.retention_days > 0 else None
-        if args.max_article_age_days is not None:
-            settings.max_article_age_days = args.max_article_age_days if args.max_article_age_days > 0 else None
-        if args.user_agent is not None:
-            settings.user_agent = args.user_agent
-        if args.interests is not None:
-            settings.interests = [t.strip() for t in args.interests.split(",") if t.strip()]
-        if args.min_relevance is not None:
-            settings.min_relevance_score = max(1, min(10, args.min_relevance))
+        _apply_app_args(settings, args)
         store.update_settings(settings)
         print("Updated app settings.")
         return
     if args.config_command == "set-llm":
         llm = _apply_llm_args(settings.llm, args)
-        store.update_settings(AppSettings(llm=llm, fetch_full_articles=settings.fetch_full_articles, request_timeout_seconds=settings.request_timeout_seconds, user_agent=settings.user_agent))
+        settings.llm = llm
+        store.update_settings(settings)
         print("Updated LLM settings.")
     if args.config_command == "profile":
         handle_config_profile(args, store)
@@ -268,30 +286,31 @@ def _apply_llm_args(llm: "LLMSettings", args: argparse.Namespace) -> "LLMSetting
 
 def handle_config_profile(args: argparse.Namespace, store: JsonStore) -> None:
     if args.profile_command == "save":
-        from .models import LLMSettings
-        llm = _apply_llm_args(LLMSettings(), args)
-        store.save_llm_profile(args.name, llm)
+        profile = store.get_profile(args.name) or store.settings()
+        _apply_llm_args(profile.llm, args)
+        _apply_app_args(profile, args)
+        store.save_profile(args.name, profile)
         print(f"Saved profile '{args.name}'.")
     elif args.profile_command == "use":
-        llm = store.get_llm_profile(args.name)
-        if llm is None:
+        profile = store.get_profile(args.name)
+        if profile is None:
             print(f"No profile named '{args.name}'. Use 'config profile list' to see available profiles.")
             return
-        settings = store.settings()
-        store.update_settings(AppSettings(llm=llm, fetch_full_articles=settings.fetch_full_articles, request_timeout_seconds=settings.request_timeout_seconds, user_agent=settings.user_agent))
-        print(f"Active LLM config set to profile '{args.name}'.")
+        store.update_settings(profile)
+        print(f"Active config set to profile '{args.name}'.")
     elif args.profile_command == "list":
-        profiles = store.list_llm_profiles()
+        profiles = store.list_profiles()
         if not profiles:
             print("No profiles saved.")
             return
         for name, cfg in profiles.items():
-            provider = cfg.get("provider", "?")
-            model = cfg.get("model", "?")
-            base_url = cfg.get("base_url", "")
+            llm = cfg.get("llm", cfg)
+            provider = llm.get("provider", "?")
+            model = llm.get("model", "?")
+            base_url = llm.get("base_url", "")
             print(f"{name}  {provider}  {model}  {base_url}")
     elif args.profile_command == "delete":
-        removed = store.delete_llm_profile(args.name)
+        removed = store.delete_profile(args.name)
         print(f"Deleted profile '{args.name}'." if removed else f"No profile named '{args.name}'.")
 
 
@@ -568,6 +587,8 @@ def run_once(args: argparse.Namespace, store: JsonStore) -> None:
     if purged_seen or purged_summaries:
         print(f"Purged {purged_seen} seen article(s) and {purged_summaries} summary record(s) older than {settings.retention_days} day(s).")
         data = store.load()
+    if args.dry_run:
+        settings.fetch_full_articles = False
     feeds = store.feeds()
     seen = set(data.get("seen_articles", {}).keys())
     articles = fetch_new_articles(feeds, settings, seen, limit_per_feed=args.limit_per_feed)
@@ -585,6 +606,8 @@ def test_run(args: argparse.Namespace, store: JsonStore) -> None:
         print(f"No enabled feed found for id {args.feed_id}.")
         return
     limit_per_feed = None if args.all else args.limit_per_feed
+    if args.dry_run:
+        settings.fetch_full_articles = False
     results = fetch_articles_by_feed(feeds, settings, seen=set(), limit_per_feed=limit_per_feed)
     if not args.quiet_feeds:
         print_feed_diagnostics(results)
@@ -597,15 +620,18 @@ def test_run(args: argparse.Namespace, store: JsonStore) -> None:
 
 
 def apply_run_overrides(settings: AppSettings, args: argparse.Namespace, store: JsonStore) -> None:
-    if getattr(args, "max_article_age_days", None) is not None:
-        settings.max_article_age_days = parse_optional_positive_days(args.max_article_age_days)
     profile_name = getattr(args, "profile", None)
     if profile_name:
-        llm = store.get_llm_profile(profile_name)
-        if llm is None:
-            print(f"Warning: no profile named '{profile_name}', using active LLM config.")
+        profile = store.get_profile(profile_name)
+        if profile is None:
+            print(f"Warning: no profile named '{profile_name}', using active config.")
         else:
-            settings.llm = llm
+            for f in dataclasses.fields(profile):
+                setattr(settings, f.name, getattr(profile, f.name))
+    if getattr(args, "max_article_age_days", None) is not None:
+        settings.max_article_age_days = parse_optional_positive_days(args.max_article_age_days)
+    if settings.max_article_age_days is None and settings.retention_days is not None:
+        settings.max_article_age_days = settings.retention_days
 
 
 def select_feeds(feeds: list[Feed], feed_id: str | None) -> list[Feed]:

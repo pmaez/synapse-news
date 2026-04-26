@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -12,6 +15,16 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .models import AppSettings, Feed
+
+
+@contextmanager
+def _socket_timeout(seconds: float):
+    old = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(seconds)
+    try:
+        yield
+    finally:
+        socket.setdefaulttimeout(old)
 
 
 @dataclass(slots=True)
@@ -197,15 +210,37 @@ def fetch_articles_by_feed(feeds: list[Feed], settings: AppSettings, seen: set[s
     return results
 
 
+def _fetch_full_texts(candidates: list[dict], settings: AppSettings, max_workers: int = 8) -> None:
+    if not candidates:
+        return
+
+    def fetch_one(c: dict) -> tuple[dict, str]:
+        try:
+            text = fetch_article_text(c["url"], settings)
+            return c, text if text else c["excerpt"]
+        except (httpx.HTTPError, httpx.InvalidURL):
+            return c, c["excerpt"]
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_one, c): c for c in candidates if c["url"]}
+        for future in as_completed(futures):
+            c, text = future.result()
+            c["content"] = text
+
+
 def fetch_feed_articles(feed: Feed, settings: AppSettings, seen: set[str], limit_per_feed: int | None = None) -> FeedFetchResult:
-    articles: list[Article] = []
+    feed_label = feed.title or feed.url
+    print(f"Fetching: {feed_label}")
     try:
-        parsed = feedparser.parse(feed.url, agent=settings.user_agent)
+        with _socket_timeout(settings.request_timeout_seconds):
+            parsed = feedparser.parse(feed.url, agent=settings.user_agent)
     except Exception as exc:
         return FeedFetchResult(feed=feed, feed_title=feed.title or feed.url, entry_count=0, selected_count=0, articles=[], error=str(exc))
     feed_title = feed.title or parsed.feed.get("title") or feed.url
     error = str(parsed.bozo_exception) if getattr(parsed, "bozo", False) and getattr(parsed, "bozo_exception", None) else None
     entries = parsed.entries[:limit_per_feed] if limit_per_feed else parsed.entries
+
+    candidates: list[dict] = []
     for entry in entries:
         if is_entry_too_old(entry, settings.max_article_age_days):
             continue
@@ -215,26 +250,30 @@ def fetch_feed_articles(feed: Feed, settings: AppSettings, seen: set[str], limit
         if article_id in seen:
             continue
         excerpt = html_to_text(entry.get("summary", "") or entry.get("description", ""))
-        content = excerpt
-        if settings.fetch_full_articles and url:
-            try:
-                fetched = fetch_article_text(url, settings)
-                if fetched:
-                    content = fetched
-            except (httpx.HTTPError, httpx.InvalidURL):
-                content = excerpt
-        articles.append(
-            Article(
-                id=article_id,
-                feed_id=feed.id,
-                feed_title=feed_title,
-                title=title,
-                url=url,
-                published=normalize_published(entry),
-                excerpt=excerpt,
-                content=content[:12000],
-            )
+        candidates.append({
+            "id": article_id,
+            "title": title,
+            "url": url,
+            "published": normalize_published(entry),
+            "excerpt": excerpt,
+        })
+
+    if settings.fetch_full_articles:
+        _fetch_full_texts(candidates, settings)
+
+    articles = [
+        Article(
+            id=c["id"],
+            feed_id=feed.id,
+            feed_title=feed_title,
+            title=c["title"],
+            url=c["url"],
+            published=c["published"],
+            excerpt=c["excerpt"],
+            content=c.get("content", c["excerpt"])[:12000],
         )
+        for c in candidates
+    ]
     return FeedFetchResult(
         feed=feed,
         feed_title=feed_title,

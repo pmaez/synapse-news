@@ -37,9 +37,9 @@ The app is a CLI tool (`synapse-news`) that polls RSS feeds, fetches article tex
 
 - **`models.py`** — Pure dataclasses: `Feed`, `LLMSettings`, `AppSettings`. Each has `from_dict`/`to_dict` for JSON serialization. `retention_days=0` and `max_article_age_days=0` are normalized to `None` (disabled) by `parse_optional_positive_days`.
 - **`storage.py`** — `JsonStore`: wraps the JSON state file with `fcntl`-based exclusive locking and atomic writes (temp file + `replace`). The `locked_data()` context manager is the safe write path — read-modify-write within a single lock acquisition.
-- **`feeds.py`** — Feed fetching via `feedparser`, full-article fetch via `httpx` + BeautifulSoup, feed discovery (HTML `<link>` tags + known hardcoded patterns). Feed IDs are SHA-1(url)[:12]; article IDs are SHA-256(url).
+- **`feeds.py`** — Feed fetching via `feedparser` (with `_socket_timeout` to enforce `request_timeout_seconds` on the parse), full-article fetch via `httpx` + BeautifulSoup, feed discovery (HTML `<link>` tags + known hardcoded patterns). When `fetch_full_articles` is enabled, article texts are fetched in parallel via `ThreadPoolExecutor`. Feed IDs are SHA-1(url)[:12]; article IDs are SHA-256(url).
 - **`llm.py`** — LLM dispatch: OpenAI-compatible path (lmstudio, openai, openai-compatible) and Anthropic direct API path. On empty response, the OpenAI-compatible path retries once with a stricter system prompt. `provider=none` uses a sentence-extraction fallback.
-- **`cli.py`** — `argparse`-based CLI. `run_once` is the main pipeline: purge → fetch new articles → summarize → mark seen. `test-run` reuses the same pipeline but skips persisting state unless `--save` is passed. `_apply_llm_args` is a shared helper used by both `set-llm` and `config profile save` to avoid duplicating flag definitions.
+- **`cli.py`** — `argparse`-based CLI. `run_once` is the main pipeline: purge → fetch new articles → summarize → mark seen. `test-run` reuses the same pipeline but skips persisting state unless `--save` is passed. `_apply_llm_args` and `_apply_app_args` are shared helpers used by both their respective `set-*` commands and `config profile save` to avoid duplicating flag definitions.
 - **`tui.py`** — `textual`-based review TUI (`synapse-news review`). Split-panel: article list on the left with ↑/↓ vote indicators, detail view on the right. Requires `textual>=0.52.0`.
 
 ### Key invariants
@@ -48,6 +48,7 @@ The app is a CLI tool (`synapse-news`) that polls RSS feeds, fetches article tex
 - Article content is truncated to 12,000 characters before the LLM prompt.
 - If the LLM check fails before a run, no articles are marked seen so they will be retried on the next run.
 - `summaries list` returns newest-first (reversed on read); the JSON file stores them append-order.
+- If `max_article_age_days` is not set but `retention_days` is, `max_article_age_days` defaults to `retention_days` at run time (applied in `apply_run_overrides`).
 
 ### Relevance filtering and ranking
 
@@ -78,9 +79,11 @@ Scoring uses `temperature=0.1` and `max_scoring_tokens` (default 80) — a cheap
 
 Votes are stored in the JSON state: upvotes in `starred_articles`, downvotes in `downvoted_articles`. Voting is mutually exclusive — setting one clears the other.
 
-### LLM profiles
+### Profiles
 
-Named LLM configurations stored in `llm_profiles` in the JSON state. `config profile save <name> [flags]` creates a profile from `LLMSettings` defaults, applying only the specified flags. `config profile use <name>` copies the profile into `settings.llm`. `run --profile <name>` and `test-run --profile <name>` override `settings.llm` for that run only via `apply_run_overrides`.
+Named configurations stored in `llm_profiles` in the JSON state. Profiles now hold a full `AppSettings` snapshot (LLM settings + app settings). `config profile save <name> [flags]` loads the existing profile (or current active settings as a baseline) and applies only the specified flags — both `--provider`/`--model`/etc. and `--interests`/`--fetch-full-articles`/etc. are accepted. `config profile use <name>` replaces the active `settings` entirely. `run --profile <name>` and `test-run --profile <name>` override all settings for that run only via `apply_run_overrides`.
+
+Old profiles that stored only `LLMSettings` (pre-migration format, identified by a top-level `"provider"` key without a nested `"llm"` key) are transparently migrated to `AppSettings` on read.
 
 ### Planned SQLite backend
 
