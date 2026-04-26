@@ -217,9 +217,11 @@ def _fetch_full_texts(candidates: list[dict], settings: AppSettings, max_workers
     def fetch_one(c: dict) -> tuple[dict, str]:
         try:
             text = fetch_article_text(c["url"], settings)
-            return c, text if text else c["excerpt"]
+            if text and len(text) > len(c["excerpt"]):
+                return c, text
         except (httpx.HTTPError, httpx.InvalidURL):
-            return c, c["excerpt"]
+            pass
+        return c, c["excerpt"]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fetch_one, c): c for c in candidates if c["url"]}
