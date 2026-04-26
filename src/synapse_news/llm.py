@@ -12,6 +12,7 @@ from .models import LLMSettings
 
 SCORE_SYSTEM_PROMPT = (
     "You evaluate news articles for relevance to a reader's interests. "
+    "Do not think step by step. Do not include reasoning or preamble. "
     "Respond with exactly two lines: 'Score: N' (where N is 1-10) and 'Reason: one sentence.'"
 )
 
@@ -324,7 +325,9 @@ def _score_openai_compatible(prompt: str, settings: LLMSettings) -> str:
     message = choices[0].get("message") or {}
     content = message.get("content")
     if isinstance(content, str) and content.strip():
-        return content.strip()
+        cleaned = _strip_thinking_tags(content)
+        if cleaned:
+            return cleaned
     # Reasoning models (e.g. Gemma thinking variants) put output in reasoning_content
     # when content tokens are exhausted; extract score from there as fallback.
     reasoning = message.get("reasoning_content")
@@ -351,7 +354,11 @@ def _score_anthropic(prompt: str, settings: LLMSettings) -> str:
     response.raise_for_status()
     data = response.json()
     chunks = [item.get("text", "") for item in data.get("content", []) if item.get("type") == "text"]
-    return "\n".join(chunks)
+    return _strip_thinking_tags("\n".join(chunks))
+
+
+def _strip_thinking_tags(text: str) -> str:
+    return re.sub(r'<think(?:ing)?>\s*.*?\s*</think(?:ing)?>', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
 
 
 def _parse_score_response(text: str) -> tuple[int, str]:
