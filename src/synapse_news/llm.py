@@ -170,7 +170,7 @@ def extract_openai_compatible_text(data: dict[str, Any]) -> str:
     message = choices[0].get("message") or {}
     content = message.get("content")
     if isinstance(content, str):
-        text = clean_summary_text(_strip_thinking_tags(content))
+        text = clean_summary_text(content)
         if text:
             return text
     if isinstance(content, list):
@@ -178,11 +178,11 @@ def extract_openai_compatible_text(data: dict[str, Any]) -> str:
         for item in content:
             if isinstance(item, dict):
                 chunks.append(str(item.get("text") or item.get("content") or ""))
-        text = clean_summary_text(_strip_thinking_tags("\n".join(chunk for chunk in chunks if chunk)))
+        text = clean_summary_text("\n".join(chunk for chunk in chunks if chunk))
         if text:
             return text
     text = choices[0].get("text")
-    return clean_summary_text(_strip_thinking_tags(text)) if isinstance(text, str) else ""
+    return clean_summary_text(text) if isinstance(text, str) else ""
 
 
 def clean_summary_text(text: str) -> str:
