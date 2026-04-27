@@ -18,6 +18,16 @@ from .storage import JsonStore
 DEFAULT_DATA_PATH = Path("data/synapse_news.json")
 
 
+def _format_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(int(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours, mins = divmod(minutes, 60)
+    return f"{hours}h {mins}m {secs}s"
+
+
 def _add_app_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fetch-full-articles", choices=["on", "off"])
     parser.add_argument("--request-timeout-seconds", type=float)
@@ -158,10 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     store = JsonStore(args.data)
+    t0 = time.monotonic()
 
     if args.command == "init":
         store.init()
         print(f"Initialized {args.data}")
+        print(f"\nCompleted in {_format_duration(time.monotonic() - t0)}.")
         return
 
     store.init()
@@ -180,12 +192,17 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "run":
         if args.loop:
             while True:
+                iter_t0 = time.monotonic()
                 run_once(args, store)
+                print(f"\nRun completed in {_format_duration(time.monotonic() - iter_t0)}.")
                 time.sleep(args.interval_minutes * 60)
         else:
             run_once(args, store)
     elif args.command == "test-run":
         test_run(args, store)
+
+    if not (args.command == "run" and args.loop):
+        print(f"\nCompleted in {_format_duration(time.monotonic() - t0)}.")
 
 
 def handle_feed(args: argparse.Namespace, store: JsonStore) -> None:
@@ -567,7 +584,7 @@ def summary_card_html(summary: dict, index: int | None = None, total: int | None
     provider = escape(str(summary.get("provider") or "unknown"))
     model = escape(str(summary.get("model") or "unknown"))
     body = escape((summary.get("summary") or "").strip() or "[empty summary]")
-    link = f'<a href="{safe_url}">{safe_url}</a>' if url else ""
+    link = f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>' if url else ""
     score = summary.get("relevance_score")
     score_html = f' | <strong>Score: {escape(str(score))}/10</strong>' if score is not None else ""
     num_html = f'<div class="article-num">#{index} of {total}</div>' if index is not None and total is not None else ""
