@@ -168,6 +168,53 @@ synapse-news config set-app --interests "Apple,AI"
 synapse-news config set-app --min-relevance 8
 ```
 
+### API key configuration
+
+There are two ways to supply an API key:
+
+- **`--api-key <value>`** — stores the key directly in the JSON state file (plaintext). Simple but the secret is visible in the file.
+- **`--api-key-env <VAR>`** — stores only the *name* of an environment variable. The actual key is read from the environment at runtime and never written to the state file. This is the recommended approach.
+
+If both are set, `api_key` takes precedence over `api_key_env`.
+
+**Step 1.** Tell the app which env var to look up:
+
+```bash
+synapse-news config set-llm --provider anthropic --api-key-env ANTHROPIC_API_KEY
+```
+
+**Step 2.** Set the env var before running. For a one-off run:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE synapse-news run
+```
+
+Or export it for the duration of your shell session:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE
+synapse-news run
+```
+
+**Step 3 (optional).** To persist it across sessions, add the export to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+
+```bash
+echo 'export ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE' >> ~/.zshrc
+source ~/.zshrc
+```
+
+The same pattern works for any provider — substitute the env var name and provider accordingly:
+
+```bash
+# OpenAI
+synapse-news config set-llm --provider openai --model gpt-4.1-mini --api-key-env OPENAI_API_KEY
+export OPENAI_API_KEY=sk-YOUR_KEY_HERE
+
+# Anthropic
+synapse-news config set-llm --provider anthropic --model claude-sonnet-4-6 --api-key-env ANTHROPIC_API_KEY
+export ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE
+```
+
 ### LLM settings
 
 ```bash
