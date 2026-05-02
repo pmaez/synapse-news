@@ -387,16 +387,24 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = utc_now_iso()
     total = len(summaries)
-    total_pages = max(1, -(-total // PAGE_SIZE))  # ceil division
 
-    if summaries:
-        card_parts = []
-        for i, summary in enumerate(summaries):
-            page = i // PAGE_SIZE + 1
-            card_parts.append(f'<div data-page="{page}">{summary_card_html(summary, i + 1, total)}</div>')
-        cards = "\n".join(card_parts)
-    else:
-        cards = '<p class="empty">No summaries found.</p>'
+    articles_data = [
+        {
+            "id": s.get("article_id") or s.get("url") or str(i),
+            "title": s.get("title") or "Untitled",
+            "url": s.get("url") or "",
+            "feed_id": s.get("feed_id") or "unknown",
+            "published": s.get("published") or "unknown",
+            "created_at": s.get("created_at") or "unknown",
+            "summary": (s.get("summary") or "").strip() or "[empty summary]",
+            "provider": s.get("provider") or "unknown",
+            "model": s.get("model") or "unknown",
+            "score": s.get("relevance_score"),
+        }
+        for i, s in enumerate(summaries)
+    ]
+    # Replace </ to prevent premature script tag closing inside JSON
+    articles_json = json.dumps(articles_data).replace("</", "<\\/")
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -451,12 +459,37 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
       color: var(--muted);
       font-size: 14px;
     }}
+    .toolbar {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }}
+    .toolbar button {{
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 5px 12px;
+    }}
+    .toolbar button:hover {{
+      border-color: var(--accent);
+    }}
     article {{
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 8px;
       margin: 16px 0;
       padding: 18px;
+    }}
+    article.read {{
+      opacity: 0.45;
+    }}
+    article.focused {{
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
     }}
     h2 {{
       font-size: 20px;
@@ -476,13 +509,28 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
       color: var(--muted);
       font-style: italic;
     }}
+    .card-toolbar {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }}
     .article-num {{
       color: var(--muted);
       font-size: 13px;
-      margin-bottom: 4px;
     }}
-    [data-page] {{ display: none; }}
-    [data-page].active {{ display: block; }}
+    .read-btn {{
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 8px;
+    }}
+    .read-btn:hover {{
+      border-color: var(--muted);
+    }}
     .pagination {{
       display: flex;
       align-items: center;
@@ -519,35 +567,165 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
   <main>
     <header>
       <h1>Synapse News Summaries</h1>
-      <div class="meta">Generated {escape(generated_at)} | {total} article(s) | {total_pages} page(s)</div>
+      <div class="meta">Generated {escape(generated_at)} | {total} article(s) total | <span id="visible-count"></span></div>
+      <div class="toolbar">
+        <button id="btn-sort" onclick="toggleSort()"></button>
+        <button id="btn-hide-read" onclick="toggleHideRead()"></button>
+        <span class="meta" style="align-self:center;margin-left:4px">N&nbsp;=&nbsp;read&nbsp;&amp;&nbsp;next &nbsp;·&nbsp; U&nbsp;=&nbsp;unread</span>
+      </div>
     </header>
-    {cards}
+    <div id="cards-container"></div>
     <nav class="pagination" aria-label="Pagination">
-      <button id="btn-first" title="First page" onclick="goTo(1)">&#171; First</button>
-      <button id="btn-prev"  title="Previous page" onclick="goTo(cur-1)">&#8249; Prev</button>
+      <button id="btn-first" title="First page" onclick="goToPage(1)">&#171; First</button>
+      <button id="btn-prev"  title="Previous page" onclick="goToPage(cur-1)">&#8249; Prev</button>
       <span class="page-info" id="page-info"></span>
-      <button id="btn-next"  title="Next page" onclick="goTo(cur+1)">Next &#8250;</button>
+      <button id="btn-next"  title="Next page" onclick="goToPage(cur+1)">Next &#8250;</button>
     </nav>
   </main>
   <script>
+    var ARTICLES = {articles_json};
+    var PAGE_SIZE = {PAGE_SIZE};
     var cur = 1;
-    var totalPages = {total_pages};
-    var totalArticles = {total};
-    var pageSize = {PAGE_SIZE};
-    function goTo(p) {{
-      if (p < 1 || p > totalPages) return;
-      document.querySelectorAll('[data-page].active').forEach(function(el) {{ el.classList.remove('active'); }});
-      document.querySelectorAll('[data-page="' + p + '"]').forEach(function(el) {{ el.classList.add('active'); }});
-      cur = p;
-      var start = (p - 1) * pageSize + 1;
-      var end = Math.min(p * pageSize, totalArticles);
-      document.getElementById('page-info').textContent = start + '–' + end + ' of ' + totalArticles + ' · Page ' + p + ' of ' + totalPages;
+    var sortDesc = true;
+    var hideRead = true;
+    var focusIdx = 0;
+    var readIds = new Set(JSON.parse(localStorage.getItem('synapse_read') || '[]'));
+
+    function saveRead() {{
+      localStorage.setItem('synapse_read', JSON.stringify([...readIds]));
+    }}
+
+    function getVisible() {{
+      var arr = sortDesc ? ARTICLES.slice() : ARTICLES.slice().reverse();
+      if (hideRead) arr = arr.filter(function(a) {{ return !readIds.has(a.id); }});
+      return arr;
+    }}
+
+    function esc(s) {{
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }}
+
+    function renderCard(a, index, total, isFocused) {{
+      var isRead = readIds.has(a.id);
+      var classes = (isRead ? 'read' : '') + (isFocused ? (isRead ? ' focused' : 'focused') : '');
+      var classAttr = classes.trim() ? ' class="' + classes.trim() + '"' : '';
+      var scoreHtml = a.score != null ? ' | <strong>Score: ' + esc(a.score) + '/10</strong>' : '';
+      var linkHtml = a.url ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + esc(a.url) + '</a>' : '';
+      return '<article' + classAttr + '>' +
+        '<div class="card-toolbar">' +
+        '<div class="article-num">#' + index + ' of ' + total + '</div>' +
+        '<button class="read-btn" data-id="' + esc(a.id) + '">' + (isRead ? 'Mark unread' : 'Mark read') + '</button>' +
+        '</div>' +
+        '<h2>' + esc(a.title) + '</h2>' +
+        '<div class="story-meta">Feed ' + esc(a.feed_id) + ' | Published ' + esc(a.published) + ' | Saved ' + esc(a.created_at) + ' | LLM ' + esc(a.provider) + '/' + esc(a.model) + scoreHtml + '</div>' +
+        '<div>' + linkHtml + '</div>' +
+        '<div class="summary">' + esc(a.summary) + '</div>' +
+        '</article>';
+    }}
+
+    function render() {{
+      var visible = getVisible();
+      var n = visible.length;
+      var pages = Math.max(1, Math.ceil(n / PAGE_SIZE));
+      if (focusIdx >= n) focusIdx = Math.max(0, n - 1);
+      // Keep cur on the page that contains focusIdx
+      var focusPage = Math.floor(focusIdx / PAGE_SIZE) + 1;
+      if (focusPage >= 1 && focusPage <= pages) cur = focusPage;
+      if (cur > pages) cur = pages;
+      var start = (cur - 1) * PAGE_SIZE;
+      var slice = visible.slice(start, start + PAGE_SIZE);
+      document.getElementById('cards-container').innerHTML = n === 0
+        ? '<p class="empty">No articles to show.</p>'
+        : slice.map(function(a, i) {{ return renderCard(a, start + i + 1, n, (start + i) === focusIdx); }}).join('');
+      document.getElementById('visible-count').textContent = n + ' showing';
+      document.getElementById('page-info').textContent = n === 0 ? '' : (start + 1) + '–' + Math.min(start + PAGE_SIZE, n) + ' of ' + n + ' · Page ' + cur + ' of ' + pages;
       document.getElementById('btn-first').disabled = cur === 1;
       document.getElementById('btn-prev').disabled  = cur === 1;
-      document.getElementById('btn-next').disabled  = cur === totalPages;
+      document.getElementById('btn-next').disabled  = cur >= pages || n === 0;
+    }}
+
+    function scrollFocused() {{
+      var el = document.querySelector('article.focused');
+      if (el) el.scrollIntoView({{behavior: 'smooth', block: 'nearest'}});
+    }}
+
+    function goToPage(p) {{
+      var pages = Math.max(1, Math.ceil(getVisible().length / PAGE_SIZE));
+      if (p < 1 || p > pages) return;
+      cur = p;
+      // Move focusIdx to first article on the new page
+      focusIdx = (p - 1) * PAGE_SIZE;
+      render();
       window.scrollTo({{top: 0, behavior: 'smooth'}});
     }}
-    goTo(1);
+
+    function toggleSort() {{
+      sortDesc = !sortDesc;
+      cur = 1;
+      focusIdx = 0;
+      document.getElementById('btn-sort').textContent = sortDesc ? 'Oldest first ↑' : 'Newest first ↓';
+      localStorage.setItem('synapse_sort', sortDesc ? 'desc' : 'asc');
+      render();
+    }}
+
+    function toggleHideRead() {{
+      hideRead = !hideRead;
+      cur = 1;
+      focusIdx = 0;
+      document.getElementById('btn-hide-read').textContent = hideRead ? 'Show read' : 'Hide read';
+      localStorage.setItem('synapse_hide_read', hideRead ? '1' : '0');
+      render();
+    }}
+
+    function toggleRead(id) {{
+      if (readIds.has(id)) readIds.delete(id); else readIds.add(id);
+      saveRead();
+      render();
+    }}
+
+    document.getElementById('cards-container').addEventListener('click', function(e) {{
+      var btn = e.target.closest('.read-btn');
+      if (btn) toggleRead(btn.dataset.id);
+    }});
+
+    document.addEventListener('keydown', function(e) {{
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.metaKey || e.ctrlKey) return;
+      var visible = getVisible();
+      if (!visible.length) return;
+      if (focusIdx < 0 || focusIdx >= visible.length) focusIdx = 0;
+      var a = visible[focusIdx];
+      if (e.key === 'n' || e.key === 'N') {{
+        e.preventDefault();
+        readIds.add(a.id);
+        saveRead();
+        // Advance focusIdx to next unread in new visible list
+        var newVisible = getVisible();
+        var next = -1;
+        for (var i = focusIdx; i < newVisible.length; i++) {{
+          if (!readIds.has(newVisible[i].id)) {{ next = i; break; }}
+        }}
+        if (next === -1) {{
+          for (var i = 0; i < focusIdx && i < newVisible.length; i++) {{
+            if (!readIds.has(newVisible[i].id)) {{ next = i; break; }}
+          }}
+        }}
+        if (next !== -1) focusIdx = next;
+        render();
+        scrollFocused();
+      }} else if (e.key === 'u' || e.key === 'U') {{
+        e.preventDefault();
+        readIds.delete(a.id);
+        saveRead();
+        render();
+        scrollFocused();
+      }}
+    }});
+
+    sortDesc = localStorage.getItem('synapse_sort') !== 'asc';
+    hideRead = localStorage.getItem('synapse_hide_read') !== '0';
+    document.getElementById('btn-sort').textContent = sortDesc ? 'Oldest first ↑' : 'Newest first ↓';
+    document.getElementById('btn-hide-read').textContent = hideRead ? 'Show read' : 'Hide read';
+    render();
   </script>
 </body>
 </html>
@@ -572,28 +750,6 @@ def article_result_to_summary(result: dict) -> dict:
         record["relevance_score"] = article.relevance_score
         record["relevance_reason"] = article.relevance_reason or ""
     return record
-
-
-def summary_card_html(summary: dict, index: int | None = None, total: int | None = None) -> str:
-    title = escape(str(summary.get("title") or "Untitled"))
-    url = str(summary.get("url") or "")
-    safe_url = escape(url, quote=True)
-    created_at = escape(str(summary.get("created_at") or "unknown"))
-    published = escape(str(summary.get("published") or "unknown"))
-    feed_id = escape(str(summary.get("feed_id") or "unknown"))
-    provider = escape(str(summary.get("provider") or "unknown"))
-    model = escape(str(summary.get("model") or "unknown"))
-    body = escape((summary.get("summary") or "").strip() or "[empty summary]")
-    link = f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>' if url else ""
-    score = summary.get("relevance_score")
-    score_html = f' | <strong>Score: {escape(str(score))}/10</strong>' if score is not None else ""
-    num_html = f'<div class="article-num">#{index} of {total}</div>' if index is not None and total is not None else ""
-    return f"""<article>
-  {num_html}<h2>{title}</h2>
-  <div class="story-meta">Feed {feed_id} | Published {published} | Saved {created_at} | LLM {provider}/{model}{score_html}</div>
-  <div>{link}</div>
-  <div class="summary">{body}</div>
-</article>"""
 
 
 def run_once(args: argparse.Namespace, store: JsonStore) -> None:

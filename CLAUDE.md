@@ -51,7 +51,7 @@ The app is a CLI tool (`synapse-news`) that polls RSS feeds, fetches article tex
 - If `max_article_age_days` is not set but `retention_days` is, `max_article_age_days` defaults to `retention_days` at run time (applied in `apply_run_overrides`).
 - When `fetch_full_articles` is enabled, the fetched text is only used if it is longer than the RSS excerpt. If the fetch returns a bot-protection page (e.g. Cloudflare JS challenge) or otherwise less content than the excerpt, the excerpt is used instead.
 - Every command prints `Completed in X` (e.g. `3.4s`, `1m 2s`, `1h 3m 4s`) at exit via `_format_duration`. For `run --loop`, each iteration prints its own elapsed time before sleeping.
-- HTML reports (`--html`) render story links with `target="_blank" rel="noopener noreferrer"` so they open in a new tab.
+- HTML reports (`--html`) are client-side rendered from a JSON array embedded in the page. They support sort-order toggle, per-article read/unread state (persisted in `localStorage`), a hide-read filter (defaults to hidden), and keyboard shortcuts `N` (mark read + advance) and `U` (mark unread). `summary_card_html` was removed; all card rendering is done in JS via `renderCard`.
 
 ### Relevance filtering and ranking
 
