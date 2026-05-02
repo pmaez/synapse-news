@@ -351,16 +351,114 @@ synapse-news feed update-url <feed_id> <discovered-feed-url>
 
 ## Docker
 
+### Prerequisites
+
+Docker Desktop installed and running (whale icon in the menu bar).
+
+### Quick start
+
 ```bash
-docker compose run --rm synapse-news init
-docker compose run --rm synapse-news feed add https://example.com/rss --title Example
-docker compose run --rm synapse-news run
+# Build the image and start the loop in the background
+docker compose up -d --build
+
+# View live logs
+docker compose logs -f
+
+# Stop
+docker compose down
 ```
 
-Run on a schedule loop:
+The default command in `compose.yml` runs `synapse-news run --loop --interval-minutes 60` using the `docker` profile (see [Local LLM — LM Studio](#local-llm--lm-studio-in-docker) below).
+
+### Running commands
+
 ```bash
-docker compose up --build
+# One-off command against the image (recommended — container is removed after)
+docker compose run --rm synapse-news summaries list
+docker compose run --rm synapse-news config show
+docker compose run --rm synapse-news feed add https://example.com/rss --title Example
+
+# Run a command inside the already-running container
+docker compose exec synapse-news synapse-news summaries list
+
+# Interactive shell inside the running container
+docker compose exec synapse-news bash
 ```
+
+### First-time setup
+
+```bash
+# Initialize state file
+docker compose run --rm synapse-news init
+
+# Add feeds
+docker compose run --rm synapse-news feed add https://example.com/rss --title Example
+
+# Configure LLM (see providers section — use host.docker.internal for local models)
+docker compose run --rm synapse-news config set-llm --provider anthropic --api-key-env ANTHROPIC_API_KEY
+
+# Start the loop
+docker compose up -d --build
+```
+
+### State persistence
+
+`./data` on your Mac is bind-mounted into the container at `/app/data`. The JSON state file, summaries, and HTML reports all live there and persist across restarts. The native app and the container share the same file.
+
+### API keys
+
+`compose.yml` passes `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` from your shell into the container. Set them before running:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+docker compose up -d --build
+```
+
+### Local LLM — LM Studio in Docker
+
+Inside Docker, `localhost` refers to the container itself, not your Mac. To reach LM Studio running on your Mac, use `host.docker.internal` instead. The `compose.yml` already includes the `extra_hosts` entry that makes this hostname resolve correctly on Linux hosts too.
+
+The recommended approach is a named profile so the native app (which uses `localhost`) and the container (which needs `host.docker.internal`) don't conflict:
+
+```bash
+# Create the docker profile once
+docker compose run --rm synapse-news config profile save docker \
+  --provider lmstudio \
+  --base-url http://host.docker.internal:1234/v1 \
+  --model your-model-name
+```
+
+`compose.yml` passes `--profile docker` to the run command, so the container automatically picks this up. Your native `synapse-news run` continues using the active settings with `localhost`.
+
+### Applying compose.yml changes
+
+If you edit `compose.yml` while the container is running, restart it to pick up the changes:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+### How the Dockerfile works
+
+```dockerfile
+FROM python:3.12-slim
+```
+Official Python 3.12 on Debian slim — small base image, no extras.
+
+```dockerfile
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+RUN pip install .
+```
+Dependencies are installed in a separate layer from the application code. Docker caches layers — if you only change application code (not `requirements.txt`), the dependency install is skipped on the next build.
+
+```dockerfile
+ENTRYPOINT ["synapse-news"]
+CMD ["run"]
+```
+`ENTRYPOINT` fixes the executable. `CMD` provides the default argument (`run`). The `command:` in `compose.yml` replaces `CMD`, which is how `run --loop --interval-minutes 60 --profile docker` is passed in.
 
 ---
 

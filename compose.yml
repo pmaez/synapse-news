@@ -8,4 +8,4 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["run", "--loop", "--interval-minutes", "60"]
+    command: ["run", "--loop", "--interval-minutes", "60", "--profile", "docker"]
