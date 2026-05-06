@@ -605,12 +605,16 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }}
 
+    function safeUrl(u) {{
+      return /^https?:\/\//i.test(u) ? u : '#';
+    }}
+
     function renderCard(a, index, total, isFocused) {{
       var isRead = readIds.has(a.id);
       var classes = (isRead ? 'read' : '') + (isFocused ? (isRead ? ' focused' : 'focused') : '');
       var classAttr = classes.trim() ? ' class="' + classes.trim() + '"' : '';
       var scoreHtml = a.score != null ? ' | <strong>Score: ' + esc(a.score) + '/10</strong>' : '';
-      var linkHtml = a.url ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + esc(a.url) + '</a>' : '';
+      var linkHtml = a.url ? '<a href="' + safeUrl(esc(a.url)) + '" target="_blank" rel="noopener noreferrer">' + esc(a.url) + '</a>' : '';
       return '<article' + classAttr + '>' +
         '<div class="card-toolbar">' +
         '<div class="article-num">#' + index + ' of ' + total + '</div>' +
