@@ -4,6 +4,19 @@ RSS news monitor and summarizer. Polls feeds, fetches full article text, and gen
 
 ## Quick Start
 
+**With pipx** (recommended for running as a global CLI tool):
+
+```bash
+pipx install /path/to/synapse-news
+
+synapse-news init
+synapse-news feed add https://example.com/rss --title "Example"
+synapse-news config set-llm --provider lmstudio --base-url http://localhost:1234/v1 --model local-model
+synapse-news run
+```
+
+**With a virtual environment** (recommended for development):
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
