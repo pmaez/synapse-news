@@ -27,6 +27,9 @@ python -m unittest tests.test_storage.JsonStoreTest.test_json_store_round_trip
 synapse-news init
 synapse-news run
 synapse-news test-run
+
+# Print a command quick-reference card
+synapse-news cheat
 ```
 
 ## Architecture

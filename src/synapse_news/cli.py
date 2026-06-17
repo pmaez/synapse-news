@@ -162,7 +162,86 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser = subparsers.add_parser("review", help="Launch TUI to review and vote on articles.")
     review_parser.add_argument("--limit", type=int, default=None, help="Max articles to load. Default: all.")
 
+    subparsers.add_parser("cheat", help="Print a quick-reference cheat sheet.")
+
     return parser
+
+
+CHEAT_SHEET = """
+╔══════════════════════════════════════════════════════════════════╗
+║              synapse-news  ·  quick reference                    ║
+╚══════════════════════════════════════════════════════════════════╝
+
+── Setup ──────────────────────────────────────────────────────────
+  synapse-news init                    Create / migrate state file
+  synapse-news config show             Print all current settings
+
+── LLM provider ───────────────────────────────────────────────────
+  # Local (LM Studio default)
+  synapse-news config set-llm --provider lmstudio --model <model>
+
+  # OpenAI
+  synapse-news config set-llm --provider openai --model gpt-4o \\
+      --api-key-env OPENAI_API_KEY
+
+  # Anthropic
+  synapse-news config set-llm --provider anthropic --model claude-sonnet-4-6 \\
+      --api-key-env ANTHROPIC_API_KEY
+
+  # Run with an API key inline (one-off, not saved)
+  OPENAI_API_KEY=sk-... synapse-news run
+
+  # No LLM — sentence-extraction fallback
+  synapse-news config set-llm --provider none
+
+── Feeds ───────────────────────────────────────────────────────────
+  synapse-news feed add <url>          Add a feed (title auto-detected)
+  synapse-news feed list               List all feeds
+  synapse-news feed discover <url>     Find RSS/Atom feeds at a URL
+  synapse-news feed remove <id>        Remove a feed
+
+── Running ─────────────────────────────────────────────────────────
+  synapse-news run                     Fetch & summarize new articles
+  synapse-news run --html out.html     …and write HTML report
+  synapse-news run --loop              Run forever (default 60 min)
+  synapse-news run --loop --interval-minutes 30
+  synapse-news run --profile <name>    Use a profile for this run only
+  synapse-news test-run                Test without marking articles seen
+  synapse-news test-run --all          Pull all articles from each feed
+
+── HTML report ─────────────────────────────────────────────────────
+  synapse-news run --html report.html
+  synapse-news summaries list --html report.html   From saved summaries
+  # Keyboard shortcuts in the browser: N = read & next, U = unread
+
+── Summaries ───────────────────────────────────────────────────────
+  synapse-news summaries list          Show last 10 summaries
+  synapse-news summaries list --limit 50
+  synapse-news summaries list --json   Output as JSON
+
+── Relevance filtering ─────────────────────────────────────────────
+  synapse-news config set-app --interests "Apple,AI"
+  synapse-news config set-app --min-relevance 7
+  synapse-news review                  TUI to vote on articles
+  synapse-news article star <id>       Upvote (improves scoring)
+  synapse-news article unstar <id>     Remove upvote
+
+── Profiles ────────────────────────────────────────────────────────
+  synapse-news config profile list     List saved profiles
+  synapse-news config profile save <name>          Save current settings
+  synapse-news config profile save <name> --model <m> --provider <p>
+  synapse-news config profile use <name>           Switch active profile
+  synapse-news config profile delete <name>
+
+── Misc ─────────────────────────────────────────────────────────────
+  synapse-news reset                   Re-process all seen articles
+  synapse-news --data other.json run   Use a different state file
+  SYNAPSE_DEBUG=1 synapse-news run     Print raw LLM responses
+"""
+
+
+def print_cheat_sheet() -> None:
+    print(CHEAT_SHEET.strip())
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -189,6 +268,9 @@ def main(argv: list[str] | None = None) -> None:
         handle_article(args, store)
     elif args.command == "review":
         handle_review(args, store)
+    elif args.command == "cheat":
+        print_cheat_sheet()
+        return
     elif args.command == "run":
         if args.loop:
             while True:
@@ -404,7 +486,7 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
         for i, s in enumerate(summaries)
     ]
     # Replace </ to prevent premature script tag closing inside JSON
-    articles_json = json.dumps(articles_data).replace("</", "<\\/")
+    articles_json = json.dumps(articles_data).replace("</", r"<\/")
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -606,7 +688,7 @@ def write_summaries_html(path: Path, summaries: list[dict]) -> None:
     }}
 
     function safeUrl(u) {{
-      return /^https?:\/\//i.test(u) ? u : '#';
+      return /^https?:\\/\\//i.test(u) ? u : '#';
     }}
 
     function renderCard(a, index, total, isFocused) {{
